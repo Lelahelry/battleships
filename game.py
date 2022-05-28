@@ -1,5 +1,6 @@
 import os
 import time
+import random
 class ship:
     def __init__(self, name: str, shape: list[tuple[bool, ...]]):
         self.name = name
@@ -46,6 +47,7 @@ class player:
         self.alive = True
         self.opponent = None
         self.map = [["WU"] * gridsize for _ in range(gridsize)]
+        self.last_hit = None
 
     def set_opponent(self, opponent: 'player'):
         self.opponent = opponent
@@ -59,37 +61,59 @@ class player:
         
         return "\n".join(lines)
     
-    def place_ship(self, xpos: int, ypos: int, ship: ship, occupied_positions: set[tuple[int, int]]):
+    def place_ship(self, xpos: int, ypos: int, ship: ship, occupied_positions: set[tuple[int, int]], *, verbose = True):
         ship_positions = {(ypos + i, xpos + j) for i, row in enumerate(ship.shape) for j, cell in enumerate(row) if cell}
         
         if not occupied_positions.isdisjoint(ship_positions):
-            os.system("clear||cls")
-            print("\nCannot have ships overlapping, please try again.")
+            if verbose:
+                os.system("clear||cls")
+                print("\nCannot have ships overlapping, please try again.")
             return set()
         else:
             for ypos, xpos in ship_positions:
                 if not (0 <= xpos < len(self.map[0]) and 0 <= ypos < len(self.map)):
-                    os.system("clear||cls")
-                    print("\nCannot place ship out of bounds, please try again.")
+                    if verbose:
+                        os.system("clear||cls")
+                        print("\nCannot place ship out of bounds, please try again.")
                     return set()
             
             return ship_positions
     
-    def target_check(self, xtar, ytar):
+    def target_check(self, xtar, ytar, *, verbose = True):
         if not (0 <= xtar < len(self.map[0])) or not (0 <= ytar < len(self.map)):
-            os.system("clear||cls")
-            print("\nTarget is out of bounds, please try again.")
+            if verbose:
+                os.system("clear||cls")
+                print("\nTarget is out of bounds, please try again.")
             return False
         elif self.map[ytar][xtar][-1] != 'U':
-            os.system("clear||cls")
-            print("\nTarget has already been hit, please try again.")
+            if verbose:
+                os.system("clear||cls")
+                print("\nTarget has already been hit, please try again.")
             return False
         else:
             return True
     
     def setup(self, *, graphical: bool = False):
         if self.isAI:
-            pass
+            print(f"{self.name} is setting up its battlefield.")
+            occupied_positions = set()
+            for idx, ship in enumerate(self.ships):
+                ship_positions = set()
+                while ship_positions == set():
+                    if graphical:
+                        pass
+                        
+                    xanchor, yanchor = random.randint(0, len(self.map[0])), random.randint(0, len(self.map))
+                    ship_positions = self.place_ship(xanchor, yanchor, ship, occupied_positions, verbose=False)
+
+                for ypos, xpos in ship_positions:
+                    self.map[ypos][xpos] = str(idx) + 'U'
+                
+                ship.place(ship_positions)
+                occupied_positions.update(ship_positions)
+            
+            print(f"\n{self.name} has placed its ships!\n")
+            time.sleep(1.5)
         else:
             occupied_positions = set()
             for idx, ship in enumerate(self.ships):
@@ -129,13 +153,28 @@ class player:
             print(f"\n{self.name}, here's your full battlefield:\n")
             print(f"{self.strmap(full=True)}")
             time.sleep(3)
-            os.system("clear||cls")
+        
+        os.system("clear||cls")
 
     def play(self, *, graphical: bool = False):
+        target_valid = False
         if self.isAI:
-            pass
+            while not target_valid:
+                if self.opponent.last_hit is None:
+                    xtar, ytar = random.randint(0, len(self.map[0])), random.randint(0, len(self.map))
+                    target_valid = self.opponent.target_check(xtar, ytar, verbose=False)
+                else:
+                    yprev, xprev = self.opponent.last_hit
+                    possible_offsets = [(xprev - 1, yprev), (xprev + 1 , yprev), (xprev, yprev - 1), (xprev, yprev + 1)]
+                    valid_offsets = [(xoff, yoff) for xoff, yoff in possible_offsets if self.opponent.target_check(xoff, yoff)]
+
+                    if valid_offsets == []:
+                        self.opponent.last_hit = None
+                    else:
+                        xtar, ytar = random.choice(valid_offsets)
+                        target_valid = True
+
         else:
-            target_valid = False
             while not target_valid:
                 if graphical:
                     pass
@@ -155,26 +194,29 @@ class player:
                     else:
                         os.system("clear||cls")
                         print("\nInvalid inputs, please try again.")
-            
-            self.opponent.get_shot(xtar, ytar)
-            time.sleep(1.5)
-            os.system("clear||cls")
+        
+        self.opponent.get_shot(xtar, ytar)
+        print(f"\nHere's {self.opponent.name}'s battlefield after this shot:\n")
+        print(self.opponent.strmap())
+        time.sleep(1.5)
+        #os.system("clear||cls")
 
     def get_shot(self, xtar: int, ytar: int):
-        assert self.map[ytar][xtar][-1] == 'U', "Position already hit."
+        assert self.map[ytar][xtar][-1] == 'U', f"Position ({ytar}, {xtar}) already hit."
 
         if self.map[ytar][xtar][:-1] == 'W':
             self.map[ytar][xtar] = self.map[ytar][xtar][:-1] + 'M'
-            print("\nMISS!")
+            print(f"\nX: {xtar}, Y: {ytar} // MISS!")
         else:
             id = self.map[ytar][xtar][:-1]
             hit = self.ships[int(id)].damage(xtar, ytar)
             self.map[ytar][xtar] = id + hit
 
             if hit == 'S':
+                self.last_hit = None
                 for ypos, xpos in self.ships[int(id)].positions.keys():
                     self.map[ypos][xpos] = self.map[ypos][xpos][:-1] + hit
-                print("\nSUNK!")
+                print(f"\nX: {xtar}, Y: {ytar} // SUNK!")
 
                 self.alive = False
                 i, n = 0, len(self.ships)
@@ -183,7 +225,8 @@ class player:
                         self.alive = True
                     else: i += 1
             else:
-                print("\nHIT!")
+                self.last_hit = (ytar, xtar)
+                print(f"\nX: {xtar}, Y: {ytar} // HIT!")
 
 class battle:
     def __init__(self, gridsize: int, possible_ships: dict[str, list[tuple[bool, ...]]], P1_name: str, P2_name: str, P1isAI: bool = False, P2isAI: bool = False):
