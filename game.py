@@ -47,7 +47,7 @@ class player:
         self.alive = True
         self.opponent = None
         self.map = [["WU"] * gridsize for _ in range(gridsize)]
-        self.last_hit = None
+        self.hits = [None]
 
     def set_opponent(self, opponent: 'player'):
         self.opponent = opponent
@@ -98,6 +98,10 @@ class player:
             print(f"{self.name} is setting up its battlefield.")
             occupied_positions = set()
             for idx, ship in enumerate(self.ships):
+                rotate_choice = bool(random.randint(0, 1))
+                if rotate_choice:
+                    ship.clockwise_rotate()
+
                 ship_positions = set()
                 while ship_positions == set():
                     if graphical:
@@ -160,18 +164,33 @@ class player:
         target_valid = False
         if self.isAI:
             while not target_valid:
-                if self.opponent.last_hit is None:
+                if self.opponent.hits[-1] is None:
                     xtar, ytar = random.randint(0, len(self.map[0])), random.randint(0, len(self.map))
                     target_valid = self.opponent.target_check(xtar, ytar, verbose=False)
                 else:
-                    yprev, xprev = self.opponent.last_hit
+                    yprev, xprev = self.opponent.hits[-1]
                     possible_offsets = [(xprev - 1, yprev), (xprev + 1 , yprev), (xprev, yprev - 1), (xprev, yprev + 1)]
-                    valid_offsets = [(xoff, yoff) for xoff, yoff in possible_offsets if self.opponent.target_check(xoff, yoff)]
+                    valid_offsets = [(xoff, yoff) for xoff, yoff in possible_offsets if self.opponent.target_check(xoff, yoff, verbose=False)]
 
                     if valid_offsets == []:
-                        self.opponent.last_hit = None
+                        self.opponent.hits.append(None)
                     else:
-                        xtar, ytar = random.choice(valid_offsets)
+                        if not self.opponent.hits[-2] is None:
+                            yprev2, xprev2 = self.opponent.hits[-2]
+                            ydir, xdir = yprev - yprev2, xprev - xprev2
+
+                            best_target = (xprev + xdir, yprev + ydir)
+                            if best_target in valid_offsets:
+                                valid_offsets.remove(best_target)
+                                valid_offsets.insert(0, best_target)
+                        
+                        for i, (xoff, yoff) in enumerate(valid_offsets):
+                            surroundings = {(xoff - 1, yoff), (xoff + 1 , yoff), (xoff, yoff - 1), (xoff, yoff + 1)}
+
+                            if surroundings.issubset(self.opponent.hits):
+                                valid_offsets.append(valid_offsets.pop(i))
+                            
+                        xtar, ytar = valid_offsets[0]
                         target_valid = True
 
         else:
@@ -199,7 +218,7 @@ class player:
         print(f"\nHere's {self.opponent.name}'s battlefield after this shot:\n")
         print(self.opponent.strmap())
         time.sleep(1.5)
-        #os.system("clear||cls")
+        os.system("clear||cls")
 
     def get_shot(self, xtar: int, ytar: int):
         assert self.map[ytar][xtar][-1] == 'U', f"Position ({ytar}, {xtar}) already hit."
@@ -225,7 +244,7 @@ class player:
                         self.alive = True
                     else: i += 1
             else:
-                self.last_hit = (ytar, xtar)
+                self.hits.append((ytar, xtar))
                 print(f"\nX: {xtar}, Y: {ytar} // HIT!")
 
 class battle:
